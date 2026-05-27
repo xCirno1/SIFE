@@ -66,6 +66,10 @@ const sifeEngine = {
   onLog: (cb: LogCallback): void => {
     ipcRenderer.on('sife:log', (_event, data) => cb(data));
   },
+
+  windowMinimize: (): void => ipcRenderer.send('window:minimize'),
+  windowMaximize: (): void => ipcRenderer.send('window:maximize'),
+  windowClose: (): void => ipcRenderer.send('window:close'),
 };
 
 contextBridge.exposeInMainWorld('sifeEngine', sifeEngine);

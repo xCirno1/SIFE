@@ -351,6 +351,16 @@ ipcMain.handle('sife:selectDirectory', async (): Promise<string | null> => {
   return result.filePaths[0];
 });
 
+ipcMain.on('window:minimize', () => mainWindow?.minimize());
+ipcMain.on('window:maximize', () => {
+  if (mainWindow?.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow?.maximize();
+  }
+});
+ipcMain.on('window:close', () => mainWindow?.close());
+
 ipcMain.handle('sife:getLogs', async (): Promise<{ lines: string[]; filePath: string }> => {
   return { lines: getLogBuffer(), filePath: getLogFilePath() };
 });

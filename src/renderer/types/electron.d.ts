@@ -16,6 +16,9 @@ declare global {
       removeAllListeners: (channel: string) => void;
       getLogs: () => Promise<{ lines: string[]; filePath: string }>;
       onLog: (cb: LogCallback) => void;
+      windowMinimize: () => void;
+      windowMaximize: () => void;
+      windowClose: () => void;
     };
   }
 
