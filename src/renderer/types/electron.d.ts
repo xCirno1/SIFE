@@ -14,6 +14,8 @@ declare global {
       onIndexStatus: (cb: StatusCallback) => void;
       onAiProgress: (cb: AiProgressCallback) => void;
       removeAllListeners: (channel: string) => void;
+      getLogs: () => Promise<{ lines: string[]; filePath: string }>;
+      onLog: (cb: LogCallback) => void;
     };
   }
 
@@ -37,4 +39,5 @@ declare global {
   type ProgressCallback = (data: { current: number; total: number; phase: string }) => void;
   type StatusCallback = (data: IndexStats) => void;
   type AiProgressCallback = (data: { status: string; progress: number }) => void;
+  type LogCallback = (data: { level: string; source: string; message: string }) => void;
 }

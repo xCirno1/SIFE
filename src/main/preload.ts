@@ -20,6 +20,7 @@ export interface FileRecord {
 type ProgressCallback = (data: { current: number; total: number; phase: string }) => void;
 type StatusCallback = (data: IndexStats) => void;
 type AiProgressCallback = (data: { status: string; progress: number }) => void;
+type LogCallback = (data: { level: string; source: string; message: string }) => void;
 
 const sifeEngine = {
   search: (query: string): Promise<FileRecord[]> =>
@@ -57,6 +58,13 @@ const sifeEngine = {
 
   removeAllListeners: (channel: string): void => {
     ipcRenderer.removeAllListeners(channel);
+  },
+
+  getLogs: (): Promise<{ lines: string[]; filePath: string }> =>
+    ipcRenderer.invoke('sife:getLogs'),
+
+  onLog: (cb: LogCallback): void => {
+    ipcRenderer.on('sife:log', (_event, data) => cb(data));
   },
 };
 

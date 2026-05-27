@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import { Worker } from 'worker_threads';
 import { SifeDatabase, FileRecord, SqlFilter } from './db/database';
 import { parseQuery } from './query/parser';
+import { initLogger, log, getLogBuffer, getLogFilePath } from './logger';
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -61,7 +62,13 @@ function createWindow(): void {
 
 function initDatabase(): void {
   const dbPath = path.join(app.getPath('userData'), 'sife.db');
-  db = new SifeDatabase(dbPath);
+  try {
+    db = new SifeDatabase(dbPath);
+    log('INFO', 'DB', `Database opened at ${dbPath}`);
+  } catch (err) {
+    log('ERROR', 'DB', `Failed to open database: ${(err as Error).message}`);
+    throw err;
+  }
 }
 
 function startIndexerWorker(watchDir: string): void {
@@ -88,7 +95,11 @@ function startIndexerWorker(watchDir: string): void {
 
     if (type === 'file:upsert') {
       const record = payload as unknown as FileRecord;
-      db?.upsertFile(record);
+      try {
+        db?.upsertFile(record);
+      } catch (err) {
+        log('ERROR', 'IndexerWorker', `upsertFile failed for ${record.filePath}: ${(err as Error).message}`);
+      }
       indexStats.indexedFiles = (db?.getStats().totalFiles) ?? indexStats.indexedFiles;
       sendToRenderer('index:progress', {
         current: indexStats.progress.current,
@@ -111,26 +122,32 @@ function startIndexerWorker(watchDir: string): void {
     } else if (type === 'progress') {
       const { current, total } = payload as { current: number; total: number };
       indexStats.progress = { current, total };
-      sendToRenderer('index:progress', {
-        current,
-        total,
-        phase: 'indexing',
-      });
+      log('INFO', 'IndexerWorker', `Progress: ${current}/${total}`);
+      sendToRenderer('index:progress', { current, total, phase: 'indexing' });
     } else if (type === 'ready') {
       indexStats.isIndexing = false;
       const dbStats = db?.getStats();
       indexStats.totalFiles = dbStats?.totalFiles ?? 0;
+      log('INFO', 'IndexerWorker', `Ready — ${indexStats.totalFiles} files indexed`);
       sendToRenderer('index:status', { ...indexStats });
+    } else if (type === 'error') {
+      const { message } = payload as { message: string };
+      log('ERROR', 'IndexerWorker', message);
+      sendToRenderer('sife:log', { level: 'ERROR', source: 'IndexerWorker', message });
     }
   });
 
   indexerWorker.on('error', (err) => {
-    console.error('[IndexerWorker] error:', err);
+    log('ERROR', 'IndexerWorker', `Worker thread error: ${err.message}`);
+    sendToRenderer('sife:log', { level: 'ERROR', source: 'IndexerWorker', message: err.message });
   });
 
   indexerWorker.on('exit', (code) => {
     if (code !== 0) {
-      console.error(`[IndexerWorker] exited with code ${code}`);
+      log('ERROR', 'IndexerWorker', `Exited with code ${code}`);
+      sendToRenderer('sife:log', { level: 'ERROR', source: 'IndexerWorker', message: `Worker exited with code ${code}` });
+    } else {
+      log('INFO', 'IndexerWorker', 'Worker exited cleanly');
     }
     indexerWorker = null;
   });
@@ -154,23 +171,31 @@ function startAiWorker(): void {
       sendToRenderer('ai:progress', payload);
     } else if (type === 'model:ready') {
       indexStats.modelStatus = 'ready';
+      log('INFO', 'AiWorker', 'Model ready');
       sendToRenderer('index:status', { ...indexStats });
     } else if (type === 'embed:result') {
       const { fileId, embedding } = payload as { fileId: string; embedding: number[] };
-      db?.updateEmbedding(fileId, embedding);
+      try {
+        db?.updateEmbedding(fileId, embedding);
+      } catch (err) {
+        log('ERROR', 'AiWorker', `updateEmbedding failed for ${fileId}: ${(err as Error).message}`);
+      }
     } else if (type === 'error') {
-      console.error('[AiWorker] error:', payload);
+      const { message } = payload as { message: string };
+      log('ERROR', 'AiWorker', message);
+      sendToRenderer('sife:log', { level: 'ERROR', source: 'AiWorker', message });
     }
   });
 
   aiWorker.on('error', (err) => {
-    console.error('[AiWorker] error:', err);
+    log('ERROR', 'AiWorker', `Worker thread error: ${err.message}`);
     indexStats.modelStatus = 'error';
+    sendToRenderer('sife:log', { level: 'ERROR', source: 'AiWorker', message: err.message });
   });
 
   aiWorker.on('exit', (code) => {
     if (code !== 0) {
-      console.error(`[AiWorker] exited with code ${code}`);
+      log('ERROR', 'AiWorker', `Exited with code ${code}`);
     }
     aiWorker = null;
   });
@@ -275,11 +300,17 @@ ipcMain.handle('sife:selectDirectory', async (): Promise<string | null> => {
   return result.filePaths[0];
 });
 
+ipcMain.handle('sife:getLogs', async (): Promise<{ lines: string[]; filePath: string }> => {
+  return { lines: getLogBuffer(), filePath: getLogFilePath() };
+});
+
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(async () => {
+  initLogger(app.getPath('userData'));
+  log('INFO', 'App', `SIFE starting — userData: ${app.getPath('userData')}`);
   initDatabase();
   createWindow();
   startAiWorker();

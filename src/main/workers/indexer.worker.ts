@@ -295,9 +295,9 @@ parentPort.on('message', (msg: WorkerInMessage) => {
 
     (async () => {
       try {
-        // Open a read-only DB connection for reconciliation queries
+        // Open a read-only DB connection for reconciliation queries.
+        // Do NOT set any write pragmas (journal_mode etc.) on a readonly connection.
         readDb = new Database(dbPath, { readonly: true, fileMustExist: false });
-        readDb.pragma('journal_mode=WAL');
 
         // Run delta reconciliation
         await reconcile(watchDir, readDb);

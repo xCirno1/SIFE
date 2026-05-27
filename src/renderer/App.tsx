@@ -4,6 +4,7 @@ import Omnibar from './components/Omnibar';
 import ResultsList from './components/ResultsList';
 import InspectorPanel from './components/InspectorPanel';
 import StatusHUD from './components/StatusHUD';
+import DebugPanel from './components/DebugPanel';
 import { useDebounce } from './hooks/useDebounce';
 
 const DEFAULT_STATS: IndexStats = {
@@ -21,6 +22,7 @@ export default function App() {
   const [indexStats, setIndexStats] = useState<IndexStats>(DEFAULT_STATS);
   const [watchDir, setWatchDir] = useState('');
   const [showSettings, setShowSettings] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   const [settingsDirInput, setSettingsDirInput] = useState('');
   const [modelStatus, setModelStatus] = useState('');
 
@@ -136,7 +138,16 @@ export default function App() {
           </span>
         </div>
         <div className="flex-1" />
-        <div className="no-drag px-3">
+        <div className="no-drag px-3 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setShowDebug(true)}
+            className="cursor-pointer text-xs hover:text-white transition-colors px-2 py-1 rounded font-mono"
+            style={{ color: '#52525b' }}
+            title="Debug Log"
+          >
+            ⬡
+          </button>
           <button
             type="button"
             onClick={openSettings}
@@ -308,6 +319,9 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Debug log panel */}
+      {showDebug && <DebugPanel onClose={() => setShowDebug(false)} />}
     </div>
   );
 }
