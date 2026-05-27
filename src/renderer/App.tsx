@@ -159,13 +159,57 @@ export default function App() {
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        <ResultsList
-          results={results}
-          selectedId={selectedFile?.fileId ?? null}
-          onSelect={handleSelectFile}
-        />
-        {selectedFile && (
-          <InspectorPanel file={selectedFile} onClose={handleCloseInspector} />
+        {!watchDir ? (
+          /* ── Onboarding empty state ── */
+          <div className="flex-1 flex flex-col items-center justify-center gap-6 px-8 select-none">
+            <div className="flex flex-col items-center gap-3">
+              <div
+                className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl"
+                style={{ backgroundColor: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.25)' }}
+              >
+                🗂️
+              </div>
+              <h2 className="text-lg font-semibold" style={{ color: '#fafafa' }}>
+                No folder indexed yet
+              </h2>
+              <p className="text-sm text-center max-w-xs" style={{ color: '#71717a' }}>
+                Choose a folder to watch. SIFE will index every file inside it and keep it in sync automatically.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                const dir = await window.sifeEngine.selectDirectory();
+                if (!dir) return;
+                const result = await window.sifeEngine.setWatchDir(dir);
+                if (result.success) setWatchDir(dir);
+                else console.error('setWatchDir error:', result.error);
+              }}
+              className="cursor-pointer flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all hover:brightness-110 active:scale-95"
+              style={{
+                backgroundColor: '#a855f7',
+                color: '#fff',
+                boxShadow: '0 0 20px rgba(168,85,247,0.35)',
+              }}
+            >
+              <span>📁</span>
+              Select Folder to Index
+            </button>
+            <p className="text-xs" style={{ color: '#3f3f46' }}>
+              You can change this anytime via the ⚙ settings icon.
+            </p>
+          </div>
+        ) : (
+          <>
+            <ResultsList
+              results={results}
+              selectedId={selectedFile?.fileId ?? null}
+              onSelect={handleSelectFile}
+            />
+            {selectedFile && (
+              <InspectorPanel file={selectedFile} onClose={handleCloseInspector} />
+            )}
+          </>
         )}
       </div>
 
