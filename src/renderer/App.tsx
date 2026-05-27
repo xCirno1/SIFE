@@ -138,7 +138,7 @@ export default function App() {
           </span>
         </div>
         <div className="flex-1" />
-        <div className="no-drag px-3 flex items-center gap-1">
+        <div className="no-drag pl-3 flex items-center gap-1">
           <button
             type="button"
             onClick={() => setShowDebug(true)}
@@ -158,7 +158,7 @@ export default function App() {
             ⚙
           </button>
           {/* Window controls */}
-          <div className="flex items-center ml-2 gap-px">
+          <div className="flex items-center gap-px">
             <button
               type="button"
               onClick={() => window.sifeEngine.windowMinimize()}

@@ -204,6 +204,30 @@ function startIndexerWorker(watchDir: string): void {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Pending query-embed map — lets sife:search await an embedding from the worker
+// ---------------------------------------------------------------------------
+const pendingQueryEmbeds = new Map<string, { resolve: (v: number[]) => void; reject: (e: Error) => void }>();
+
+function embedQueryText(text: string): Promise<number[]> {
+  return new Promise((resolve, reject) => {
+    if (!aiWorker || indexStats.modelStatus !== 'ready') {
+      return reject(new Error('AI model not ready'));
+    }
+    // Use a dedicated prefix so the embed:result handler knows it's a query
+    const requestId = `__query__${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const timer = setTimeout(() => {
+      pendingQueryEmbeds.delete(requestId);
+      reject(new Error('Embedding timed out'));
+    }, 10_000);
+    pendingQueryEmbeds.set(requestId, {
+      resolve: (v) => { clearTimeout(timer); resolve(v); },
+      reject: (e) => { clearTimeout(timer); reject(e); },
+    });
+    aiWorker.postMessage({ type: 'embed:text', payload: { fileId: requestId, text } });
+  });
+}
+
 function startAiWorker(): void {
   const workerPath = path.join(__dirname, 'workers', 'ai.worker.js');
   aiWorker = new Worker(workerPath);
@@ -226,6 +250,15 @@ function startAiWorker(): void {
       sendToRenderer('index:status', { ...indexStats });
     } else if (type === 'embed:result') {
       const { fileId, embedding } = payload as { fileId: string; embedding: number[] };
+      // Check if this is a pending query embed (not a file index embed)
+      if (fileId.startsWith('__query__')) {
+        const pending = pendingQueryEmbeds.get(fileId);
+        if (pending) {
+          pendingQueryEmbeds.delete(fileId);
+          pending.resolve(embedding);
+        }
+        return;
+      }
       try {
         db?.updateEmbedding(fileId, embedding);
       } catch (err) {
@@ -273,15 +306,26 @@ ipcMain.handle('sife:search', async (_event, query: string): Promise<FileRecord[
     }
   }
 
-  // Only run FTS on the semantic (non-filter) portion — never on the raw query
-  // which may contain "key:value" tokens that FTS5 misinterprets as column filters.
+  // FTS on free-text portion
   const ftsText = semanticQuery.trim();
   if (ftsText) {
     const ftsResults = db.searchByFTS(ftsText, 200);
     for (const r of ftsResults) {
-      if (!resultMap.has(r.fileId)) {
-        resultMap.set(r.fileId, r);
+      if (!resultMap.has(r.fileId)) resultMap.set(r.fileId, r);
+    }
+  }
+
+  // Vector similarity search on the semantic query (supplements FTS)
+  if (ftsText && indexStats.modelStatus === 'ready') {
+    try {
+      const queryEmbedding = await embedQueryText(ftsText);
+      const vectorResults = db.searchBySimilarity(queryEmbedding, 50);
+      for (const r of vectorResults) {
+        if (!resultMap.has(r.fileId)) resultMap.set(r.fileId, r);
       }
+    } catch (err) {
+      // Model not ready or timed out — FTS results are still returned
+      log('WARN', 'Search', `Vector search skipped: ${(err as Error).message}`);
     }
   }
 

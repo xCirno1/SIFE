@@ -173,20 +173,36 @@ export default function InspectorPanel({ file, onClose }: InspectorPanelProps) {
             AI Status
           </h3>
           {hasEmbedding ? (
-            <span
-              className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded"
+            <div
+              className="rounded p-2 space-y-1.5"
               style={{
-                backgroundColor: 'rgba(168,85,247,0.1)',
-                border: '1px solid rgba(168,85,247,0.3)',
-                color: '#c084fc',
+                backgroundColor: 'rgba(168,85,247,0.07)',
+                border: '1px solid rgba(168,85,247,0.25)',
               }}
             >
-              <span>✓</span>
-              Embedding generated
-            </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs" style={{ color: '#a855f7' }}>✓</span>
+                <span className="text-xs font-medium" style={{ color: '#c084fc' }}>Embedding ready</span>
+              </div>
+              <p className="text-[11px] leading-relaxed" style={{ color: '#71717a' }}>
+                Analyzed from file name and metadata:
+              </p>
+              <p
+                className="text-[11px] break-words leading-relaxed font-mono"
+                style={{ color: '#a1a1aa' }}
+              >
+                {file.fileName}
+                {tagMap['Type'] ? ` · ${tagMap['Type']}` : ''}
+                {ext ? ` · ${ext}` : ''}
+                {tagMap['SizeKB'] ? ` · ${tagMap['SizeKB']} KB` : ''}
+              </p>
+              <p className="text-[10px] mt-1" style={{ color: '#52525b' }}>
+                This file will appear in semantic search results for related descriptions.
+              </p>
+            </div>
           ) : (
             <p className="text-xs" style={{ color: '#52525b' }}>
-              Not yet analyzed
+              Not yet analyzed — pending AI queue
             </p>
           )}
         </section>
