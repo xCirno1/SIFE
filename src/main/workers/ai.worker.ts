@@ -101,7 +101,9 @@ async function runEmbed(msg: EmbedMessage): Promise<void> {
 
 async function initModel(modelCacheDir: string): Promise<void> {
   try {
-    const { pipeline, env } = await import('@xenova/transformers');
+    // Use Function constructor so TypeScript's CJS compiler does NOT transform
+    // this dynamic import into require() — @xenova/transformers is ESM-only.
+    const { pipeline, env } = await (new Function('m', 'return import(m)')('@xenova/transformers') as Promise<typeof import('@xenova/transformers')>);
 
     env.cacheDir = modelCacheDir;
     env.localModelPath = modelCacheDir;
