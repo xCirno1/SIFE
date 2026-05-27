@@ -104,12 +104,14 @@ function flushUpsertBatch(): void {
     phase: 'indexing',
   });
 
-  if (indexStats.modelStatus === 'ready' && aiWorker) {
+  // Always dispatch to the AI worker — the worker queues internally and waits for model ready.
+  if (aiWorker) {
     for (const record of toFlush) {
-      aiWorker.postMessage({
-        type: 'embed:text',
-        payload: { fileId: record.fileId, text: `${record.fileName} ${record.metadataTags}` },
-      });
+      if (isImageFile(record.filePath)) {
+        aiWorker.postMessage({ type: 'embed:image', payload: { fileId: record.fileId, filePath: record.filePath } });
+      } else {
+        aiWorker.postMessage({ type: 'embed:text', payload: { fileId: record.fileId, text: `${record.fileName} ${record.metadataTags}` } });
+      }
     }
   }
 }
@@ -259,6 +261,19 @@ function startAiWorker(): void {
       indexStats.modelStatus = 'ready';
       log('INFO', 'AiWorker', 'Model ready');
       sendToRenderer('index:status', { ...indexStats });
+
+      // Backfill: dispatch all files that were indexed before the model was ready.
+      if (db && aiWorker) {
+        const pending = db.getFilesWithoutEmbeddings();
+        log('INFO', 'AiWorker', `Backfilling ${pending.length} unembedded files`);
+        for (const record of pending) {
+          if (isImageFile(record.filePath)) {
+            aiWorker.postMessage({ type: 'embed:image', payload: { fileId: record.fileId, filePath: record.filePath } });
+          } else {
+            aiWorker.postMessage({ type: 'embed:text', payload: { fileId: record.fileId, text: `${record.fileName} ${record.metadataTags}` } });
+          }
+        }
+      }
     } else if (type === 'embed:result') {
       const { fileId, embedding } = payload as { fileId: string; embedding: number[] };
       // Check if this is a pending query embed (not a file index embed)

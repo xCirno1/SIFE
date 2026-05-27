@@ -45,5 +45,5 @@ declare global {
   type StatusCallback = (data: IndexStats) => void;
   type AiProgressCallback = (data: { status: string; progress: number }) => void;
   type LogCallback = (data: { level: string; source: string; message: string }) => void;
-  type AiQueueCallback = (data: { size: number; processing: boolean; current: string }) => void;
+  type AiQueueCallback = (data: { size: number; processing: boolean; current: string; items: string[] }) => void;
 }

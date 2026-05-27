@@ -305,6 +305,13 @@ export class SifeDatabase {
     this.db.prepare('UPDATE files SET vectorEmbedding = NULL').run();
   }
 
+  /** Return all files that have not yet been embedded (vectorEmbedding IS NULL). */
+  getFilesWithoutEmbeddings(): { fileId: string; fileName: string; filePath: string; metadataTags: string }[] {
+    return this.db
+      .prepare('SELECT fileId, fileName, filePath, metadataTags FROM files WHERE vectorEmbedding IS NULL')
+      .all() as { fileId: string; fileName: string; filePath: string; metadataTags: string }[];
+  }
+
   close(): void {
     this.db.close();
   }

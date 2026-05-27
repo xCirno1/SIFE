@@ -25,7 +25,7 @@ export default function App() {
   const [showDebug, setShowDebug] = useState(false);
   const [settingsDirInput, setSettingsDirInput] = useState('');
   const [modelStatus, setModelStatus] = useState('');
-  const [aiQueue, setAiQueue] = useState<{ size: number; processing: boolean; current: string }>({ size: 0, processing: false, current: '' });
+  const [aiQueue, setAiQueue] = useState<{ size: number; processing: boolean; current: string; items: string[] }>({ size: 0, processing: false, current: '', items: [] });
 
   const debouncedQuery = useDebounce(query, 150);
 

@@ -16,7 +16,7 @@ type WorkerOutMessage =
   | { type: 'model:progress'; payload: { status: string; progress: number } }
   | { type: 'model:ready' }
   | { type: 'embed:result'; payload: { fileId: string; embedding: number[] } }
-  | { type: 'queue:update'; payload: { size: number; processing: boolean; current: string } }
+  | { type: 'queue:update'; payload: { size: number; processing: boolean; current: string; items: string[] } }
   | { type: 'error'; payload: { message: string; fileId?: string } };
 
 type EmbedMessage =
@@ -55,7 +55,10 @@ function post(msg: WorkerOutMessage): void {
 }
 
 function postQueueUpdate(current = ''): void {
-  post({ type: 'queue:update', payload: { size: queue.length, processing, current } });
+  const items = queue.map((m) =>
+    m.type === 'embed:image' ? path.basename(m.payload.filePath) : m.payload.text.slice(0, 60)
+  );
+  post({ type: 'queue:update', payload: { size: queue.length, processing, current, items } });
 }
 
 /** L2-normalize a Float32Array into a plain number[]. */
