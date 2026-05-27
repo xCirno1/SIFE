@@ -204,6 +204,17 @@ function startIndexerWorker(watchDir: string): void {
   });
 }
 
+// Active embedding model — changing this clears stored vectors.
+const EMBEDDING_MODEL = 'Xenova/clip-vit-base-patch16';
+
+// Image extensions that get embed:image instead of embed:text
+const IMAGE_EMBED_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']);
+
+function isImageFile(filePath: string): boolean {
+  const ext = path.extname(filePath).replace('.', '').toLowerCase();
+  return IMAGE_EMBED_EXTS.has(ext);
+}
+
 // ---------------------------------------------------------------------------
 // Pending query-embed map — lets sife:search await an embedding from the worker
 // ---------------------------------------------------------------------------
@@ -264,6 +275,8 @@ function startAiWorker(): void {
       } catch (err) {
         log('ERROR', 'AiWorker', `updateEmbedding failed for ${fileId}: ${(err as Error).message}`);
       }
+    } else if (type === 'queue:update') {
+      sendToRenderer('ai:queue', payload);
     } else if (type === 'error') {
       const { message } = payload as { message: string };
       log('ERROR', 'AiWorker', message);
@@ -362,7 +375,7 @@ ipcMain.handle('sife:setWatchDir', async (_event, dir: string): Promise<{ succes
   // Persist config
   const configPath = path.join(app.getPath('userData'), 'config.json');
   try {
-    fs.writeFileSync(configPath, JSON.stringify({ watchDir: currentWatchDir }), 'utf-8');
+    fs.writeFileSync(configPath, JSON.stringify({ watchDir: currentWatchDir, embeddingModel: EMBEDDING_MODEL }), 'utf-8');
   } catch (err) {
     console.error('[Config] Failed to write config:', err);
   }
@@ -423,7 +436,14 @@ app.whenReady().then(async () => {
   const configPath = path.join(app.getPath('userData'), 'config.json');
   if (fs.existsSync(configPath)) {
     try {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { watchDir?: string };
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { watchDir?: string; embeddingModel?: string };
+
+      // Clear stored embeddings if the model changed (dimension mismatch prevention).
+      if (config.embeddingModel !== EMBEDDING_MODEL) {
+        log('INFO', 'App', `Embedding model changed (${config.embeddingModel ?? 'none'} → ${EMBEDDING_MODEL}). Clearing stored embeddings.`);
+        db?.clearEmbeddings();
+      }
+
       if (config.watchDir && fs.existsSync(config.watchDir)) {
         currentWatchDir = config.watchDir;
         startIndexerWorker(config.watchDir);
@@ -445,7 +465,7 @@ app.on('will-quit', () => {
 
   const configPath = path.join(app.getPath('userData'), 'config.json');
   try {
-    fs.writeFileSync(configPath, JSON.stringify({ watchDir: currentWatchDir }), 'utf-8');
+    fs.writeFileSync(configPath, JSON.stringify({ watchDir: currentWatchDir, embeddingModel: EMBEDDING_MODEL }), 'utf-8');
   } catch (err) {
     console.error('[Config] Failed to write config on quit:', err);
   }

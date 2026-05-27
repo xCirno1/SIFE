@@ -1,12 +1,19 @@
 
 import type { IndexStats } from '../types';
 
+interface AiQueue {
+  size: number;
+  processing: boolean;
+  current: string;
+}
+
 interface StatusHUDProps {
   stats: IndexStats;
   modelStatus: string;
+  aiQueue: AiQueue;
 }
 
-export default function StatusHUD({ stats, modelStatus }: StatusHUDProps) {
+export default function StatusHUD({ stats, modelStatus, aiQueue }: StatusHUDProps) {
   const isModelLoading = stats.modelStatus === 'loading';
   const isIndexing = stats.isIndexing;
 
@@ -75,6 +82,21 @@ export default function StatusHUD({ stats, modelStatus }: StatusHUDProps) {
 
         {modelStatus && modelStatus !== stats.modelStatus && (
           <span className="opacity-60">{modelStatus}</span>
+        )}
+
+        {aiQueue.size > 0 && (
+          <span className="flex items-center gap-1" style={{ color: '#a855f7' }}>
+            {aiQueue.processing && (
+              <span
+                className="inline-block w-2 h-2 rounded-full animate-spin border border-purple-400"
+                style={{ borderTopColor: 'transparent' }}
+              />
+            )}
+            <span>
+              AI Queue: {aiQueue.size}
+              {aiQueue.current ? ` · ${aiQueue.current.length > 28 ? aiQueue.current.slice(0, 28) + '…' : aiQueue.current}` : ''}
+            </span>
+          </span>
         )}
       </div>
     </div>

@@ -22,6 +22,7 @@ type ProgressCallback = (data: { current: number; total: number; phase: string }
 type StatusCallback = (data: IndexStats) => void;
 type AiProgressCallback = (data: { status: string; progress: number }) => void;
 type LogCallback = (data: { level: string; source: string; message: string }) => void;
+type AiQueueCallback = (data: { size: number; processing: boolean; current: string }) => void;
 
 const sifeEngine = {
   search: (query: string): Promise<FileRecord[]> =>
@@ -66,6 +67,10 @@ const sifeEngine = {
 
   onLog: (cb: LogCallback): void => {
     ipcRenderer.on('sife:log', (_event, data) => cb(data));
+  },
+
+  onAiQueue: (cb: AiQueueCallback): void => {
+    ipcRenderer.on('ai:queue', (_event, data) => cb(data));
   },
 
   windowMinimize: (): void => ipcRenderer.send('window:minimize'),

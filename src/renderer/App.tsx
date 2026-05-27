@@ -25,6 +25,7 @@ export default function App() {
   const [showDebug, setShowDebug] = useState(false);
   const [settingsDirInput, setSettingsDirInput] = useState('');
   const [modelStatus, setModelStatus] = useState('');
+  const [aiQueue, setAiQueue] = useState<{ size: number; processing: boolean; current: string }>({ size: 0, processing: false, current: '' });
 
   const debouncedQuery = useDebounce(query, 150);
 
@@ -52,10 +53,13 @@ export default function App() {
       }
     });
 
+    window.sifeEngine.onAiQueue(setAiQueue);
+
     return () => {
       window.sifeEngine.removeAllListeners('index:progress');
       window.sifeEngine.removeAllListeners('index:status');
       window.sifeEngine.removeAllListeners('ai:progress');
+      window.sifeEngine.removeAllListeners('ai:queue');
     };
   }, []);
 
@@ -262,7 +266,7 @@ export default function App() {
       </div>
 
       {/* Status bar */}
-      <StatusHUD stats={indexStats} modelStatus={modelStatus} />
+      <StatusHUD stats={indexStats} modelStatus={modelStatus} aiQueue={aiQueue} />
 
       {/* Settings modal */}
       {showSettings && (

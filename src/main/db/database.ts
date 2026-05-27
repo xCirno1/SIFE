@@ -300,6 +300,11 @@ export class SifeDatabase {
     };
   }
 
+  /** Drop all stored embeddings (called when the embedding model changes). */
+  clearEmbeddings(): void {
+    this.db.prepare('UPDATE files SET vectorEmbedding = NULL').run();
+  }
+
   close(): void {
     this.db.close();
   }

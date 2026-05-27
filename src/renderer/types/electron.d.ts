@@ -16,6 +16,7 @@ declare global {
       removeAllListeners: (channel: string) => void;
       getLogs: () => Promise<{ lines: string[]; filePath: string }>;
       onLog: (cb: LogCallback) => void;
+      onAiQueue: (cb: AiQueueCallback) => void;
       windowMinimize: () => void;
       windowMaximize: () => void;
       windowClose: () => void;
@@ -44,4 +45,5 @@ declare global {
   type StatusCallback = (data: IndexStats) => void;
   type AiProgressCallback = (data: { status: string; progress: number }) => void;
   type LogCallback = (data: { level: string; source: string; message: string }) => void;
+  type AiQueueCallback = (data: { size: number; processing: boolean; current: string }) => void;
 }
