@@ -71,11 +71,80 @@ function initDatabase(): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Upsert batch — collects records and flushes via a single DB transaction
+// to avoid blocking the main thread on every individual file event.
+// ---------------------------------------------------------------------------
+const UPSERT_BATCH_SIZE = 100;
+const UPSERT_FLUSH_INTERVAL_MS = 250;
+
+let upsertBatch: FileRecord[] = [];
+let upsertFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushUpsertBatch(): void {
+  if (upsertFlushTimer !== null) {
+    clearTimeout(upsertFlushTimer);
+    upsertFlushTimer = null;
+  }
+  if (upsertBatch.length === 0 || !db) return;
+
+  const toFlush = upsertBatch;
+  upsertBatch = [];
+
+  try {
+    db.batchUpsert(toFlush);
+  } catch (err) {
+    log('ERROR', 'IndexerWorker', `batchUpsert failed: ${(err as Error).message}`);
+  }
+
+  indexStats.indexedFiles = db.getStats().totalFiles;
+  sendToRenderer('index:progress', {
+    current: indexStats.progress.current,
+    total: indexStats.progress.total,
+    phase: 'indexing',
+  });
+
+  if (indexStats.modelStatus === 'ready' && aiWorker) {
+    for (const record of toFlush) {
+      aiWorker.postMessage({
+        type: 'embed:text',
+        payload: { fileId: record.fileId, text: `${record.fileName} ${record.metadataTags}` },
+      });
+    }
+  }
+}
+
+function scheduleUpsertFlush(): void {
+  if (upsertBatch.length >= UPSERT_BATCH_SIZE) {
+    flushUpsertBatch();
+  } else if (upsertFlushTimer === null) {
+    upsertFlushTimer = setTimeout(flushUpsertBatch, UPSERT_FLUSH_INTERVAL_MS);
+  }
+}
+
+// Throttle progress IPC to at most once per 200 ms
+let lastProgressSentAt = 0;
+function sendProgressThrottled(current: number, total: number): void {
+  const now = Date.now();
+  if (now - lastProgressSentAt >= 200) {
+    lastProgressSentAt = now;
+    sendToRenderer('index:progress', { current, total, phase: 'indexing' });
+  }
+}
+
 function startIndexerWorker(watchDir: string): void {
   if (indexerWorker) {
     indexerWorker.terminate();
     indexerWorker = null;
   }
+
+  // Reset batch state for a fresh indexing run
+  upsertBatch = [];
+  if (upsertFlushTimer !== null) {
+    clearTimeout(upsertFlushTimer);
+    upsertFlushTimer = null;
+  }
+  lastProgressSentAt = 0;
 
   const workerPath = path.join(__dirname, 'workers', 'indexer.worker.js');
   indexerWorker = new Worker(workerPath);
@@ -95,36 +164,18 @@ function startIndexerWorker(watchDir: string): void {
 
     if (type === 'file:upsert') {
       const record = payload as unknown as FileRecord;
-      try {
-        db?.upsertFile(record);
-      } catch (err) {
-        log('ERROR', 'IndexerWorker', `upsertFile failed for ${record.filePath}: ${(err as Error).message}`);
-      }
-      indexStats.indexedFiles = (db?.getStats().totalFiles) ?? indexStats.indexedFiles;
-      sendToRenderer('index:progress', {
-        current: indexStats.progress.current,
-        total: indexStats.progress.total,
-        phase: 'indexing',
-      });
-
-      if (indexStats.modelStatus === 'ready' && aiWorker) {
-        aiWorker.postMessage({
-          type: 'embed:text',
-          payload: {
-            fileId: record.fileId,
-            text: `${record.fileName} ${record.metadataTags}`,
-          },
-        });
-      }
+      upsertBatch.push(record);
+      scheduleUpsertFlush();
     } else if (type === 'file:delete') {
       const { filePath } = payload as { filePath: string };
       db?.deleteFile(filePath);
     } else if (type === 'progress') {
       const { current, total } = payload as { current: number; total: number };
       indexStats.progress = { current, total };
-      log('INFO', 'IndexerWorker', `Progress: ${current}/${total}`);
-      sendToRenderer('index:progress', { current, total, phase: 'indexing' });
+      sendProgressThrottled(current, total);
     } else if (type === 'ready') {
+      // Flush any remaining buffered records before marking ready
+      flushUpsertBatch();
       indexStats.isIndexing = false;
       const dbStats = db?.getStats();
       indexStats.totalFiles = dbStats?.totalFiles ?? 0;

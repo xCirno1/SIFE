@@ -116,6 +116,26 @@ export class SifeDatabase {
     `);
   }
 
+  batchUpsert(records: FileRecord[]): void {
+    const insert = this.db.transaction((recs: FileRecord[]) => {
+      for (const record of recs) {
+        const vectorEmbedding =
+          record.vectorEmbedding && record.vectorEmbedding.length > 0
+            ? Buffer.from(new Float32Array(record.vectorEmbedding).buffer)
+            : null;
+        this.stmtUpsert.run({
+          fileId: record.fileId,
+          fileName: record.fileName,
+          filePath: record.filePath,
+          metadataTags: record.metadataTags,
+          vectorEmbedding,
+          lastModifiedUtc: record.lastModifiedUtc,
+        });
+      }
+    });
+    insert(records);
+  }
+
   upsertFile(record: FileRecord): void {
     const vectorEmbedding =
       record.vectorEmbedding && record.vectorEmbedding.length > 0

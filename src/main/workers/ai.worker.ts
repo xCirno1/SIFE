@@ -109,7 +109,7 @@ async function initModel(modelCacheDir: string): Promise<void> {
     env.localModelPath = modelCacheDir;
     env.allowRemoteModels = true;
 
-    pipe = (await pipeline('feature-extraction', 'Xenova/clip-vit-base-patch16', {
+    pipe = (await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
       progress_callback: (progress: { status: string; progress?: number; name?: string }) => {
         postMessage({
           type: 'model:progress',
