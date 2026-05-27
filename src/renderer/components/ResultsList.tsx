@@ -122,6 +122,16 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
         {sizeKB && <div>{formatBytes(sizeKB)}</div>}
         <div className="mt-0.5">{formatDate(file.lastModifiedUtc)}</div>
       </div>
+
+      {/* AI indicator dot */}
+      <div
+        className="flex-shrink-0 w-1.5 h-1.5 rounded-full"
+        style={{
+          backgroundColor: file.hasEmbedding ? '#a855f7' : '#3f3f46',
+          boxShadow: file.hasEmbedding ? '0 0 4px #a855f7' : 'none',
+        }}
+        title={file.hasEmbedding ? 'AI embedding ready' : 'Not yet analyzed'}
+      />
     </div>
   );
 });

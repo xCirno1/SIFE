@@ -4,6 +4,7 @@ export interface FileRecord {
   filePath: string;
   metadataTags: string;
   vectorEmbedding?: number[];
+  hasEmbedding?: boolean;
   lastModifiedUtc: number;
 }
 

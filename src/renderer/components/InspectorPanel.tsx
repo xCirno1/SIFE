@@ -84,7 +84,7 @@ export default function InspectorPanel({ file, onClose }: InspectorPanelProps) {
   const type = tagMap['Type'] ?? 'other';
   const ext = (tagMap['Ext'] ?? '').toUpperCase();
   const color = getExtColor(type);
-  const hasEmbedding = Array.isArray(file.vectorEmbedding) && file.vectorEmbedding.length > 0;
+  const hasEmbedding = file.hasEmbedding === true;
 
   return (
     <div

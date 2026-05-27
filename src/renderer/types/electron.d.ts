@@ -28,6 +28,7 @@ declare global {
     filePath: string;
     metadataTags: string;
     vectorEmbedding?: number[];
+    hasEmbedding?: boolean;
     lastModifiedUtc: number;
   }
 

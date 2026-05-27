@@ -7,6 +7,7 @@ export interface FileRecord {
   filePath: string;
   metadataTags: string;
   vectorEmbedding?: number[];
+  hasEmbedding?: boolean;
   lastModifiedUtc: number;
 }
 
@@ -23,6 +24,9 @@ export interface SqlFilter {
 
 const ALLOWED_COLUMNS = new Set<string>(['fileName', 'filePath', 'metadataTags', 'lastModifiedUtc']);
 const ALLOWED_OPERATORS = new Set<string>(['=', 'LIKE', '>', '<', '>=', '<=']);
+
+// Raw shape returned by SQLite for most queries (no vectorEmbedding BLOB, hasEmbedding is 0|1)
+type RawFileRow = Omit<FileRecord, 'vectorEmbedding' | 'hasEmbedding'> & { hasEmbedding: number };
 
 const SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS files (
@@ -95,7 +99,8 @@ export class SifeDatabase {
     `);
 
     this.stmtGetAll = this.db.prepare(`
-      SELECT fileId, fileName, filePath, metadataTags, lastModifiedUtc
+      SELECT fileId, fileName, filePath, metadataTags, lastModifiedUtc,
+             (vectorEmbedding IS NOT NULL) AS hasEmbedding
       FROM files
     `);
 
@@ -165,6 +170,7 @@ export class SifeDatabase {
 
     return {
       ...row,
+      hasEmbedding: row.vectorEmbedding !== null && row.vectorEmbedding !== undefined,
       vectorEmbedding: row.vectorEmbedding
         ? Array.from(new Float32Array(row.vectorEmbedding.buffer))
         : undefined,
@@ -172,8 +178,8 @@ export class SifeDatabase {
   }
 
   getAllFiles(): FileRecord[] {
-    const rows = this.stmtGetAll.all() as Array<Omit<FileRecord, 'vectorEmbedding'>>;
-    return rows.map((row) => ({ ...row }));
+    const rows = this.stmtGetAll.all() as RawFileRow[];
+    return rows.map((row) => ({ ...row, hasEmbedding: !!row.hasEmbedding }));
   }
 
   getAllFilesWithEmbeddings(): Array<{ fileId: string; filePath: string; vectorEmbedding: number[] }> {
@@ -201,7 +207,8 @@ export class SifeDatabase {
     if (!sanitized) return [];
 
     const stmt = this.db.prepare(`
-      SELECT f.fileId, f.fileName, f.filePath, f.metadataTags, f.lastModifiedUtc
+      SELECT f.fileId, f.fileName, f.filePath, f.metadataTags, f.lastModifiedUtc,
+             (f.vectorEmbedding IS NOT NULL) AS hasEmbedding
       FROM files_fts
       JOIN files f ON files_fts.rowid = f.rowid
       WHERE files_fts MATCH ?
@@ -209,8 +216,8 @@ export class SifeDatabase {
       LIMIT ?
     `);
 
-    const rows = stmt.all(`${sanitized}*`, limit) as Array<Omit<FileRecord, 'vectorEmbedding'>>;
-    return rows.map((row) => ({ ...row }));
+    const rows = stmt.all(`${sanitized}*`, limit) as RawFileRow[];
+    return rows.map((row) => ({ ...row, hasEmbedding: !!row.hasEmbedding }));
   }
 
   searchBySimilarity(queryEmbedding: number[], topK = 20): FileRecord[] {
@@ -230,28 +237,30 @@ export class SifeDatabase {
 
     const placeholders = topIds.map(() => '?').join(',');
     const stmt = this.db.prepare(`
-      SELECT fileId, fileName, filePath, metadataTags, lastModifiedUtc
+      SELECT fileId, fileName, filePath, metadataTags, lastModifiedUtc,
+             (vectorEmbedding IS NOT NULL) AS hasEmbedding
       FROM files WHERE fileId IN (${placeholders})
     `);
 
-    const rows = stmt.all(...topIds) as Array<Omit<FileRecord, 'vectorEmbedding'>>;
+    const rows = stmt.all(...topIds) as RawFileRow[];
 
     // Preserve similarity score order
     const rowMap = new Map(rows.map((r) => [r.fileId, r]));
     return topIds
       .map((id) => rowMap.get(id))
-      .filter((r): r is Omit<FileRecord, 'vectorEmbedding'> => r !== undefined)
-      .map((r) => ({ ...r }));
+      .filter((r): r is RawFileRow => r !== undefined)
+      .map((r) => ({ ...r, hasEmbedding: !!r.hasEmbedding }));
   }
 
   applyFilters(filters: SqlFilter[], limit = 200): FileRecord[] {
     if (filters.length === 0) {
       const stmt = this.db.prepare(`
-        SELECT fileId, fileName, filePath, metadataTags, lastModifiedUtc
+        SELECT fileId, fileName, filePath, metadataTags, lastModifiedUtc,
+               (vectorEmbedding IS NOT NULL) AS hasEmbedding
         FROM files LIMIT ?
       `);
-      const rows = stmt.all(limit) as Array<Omit<FileRecord, 'vectorEmbedding'>>;
-      return rows.map((r) => ({ ...r }));
+      const rows = stmt.all(limit) as RawFileRow[];
+      return rows.map((r) => ({ ...r, hasEmbedding: !!r.hasEmbedding }));
     }
 
     const conditions: string[] = [];
@@ -271,15 +280,16 @@ export class SifeDatabase {
     values.push(limit);
 
     const sql = `
-      SELECT fileId, fileName, filePath, metadataTags, lastModifiedUtc
+      SELECT fileId, fileName, filePath, metadataTags, lastModifiedUtc,
+             (vectorEmbedding IS NOT NULL) AS hasEmbedding
       FROM files
       WHERE ${conditions.join(' AND ')}
       LIMIT ?
     `;
 
     const stmt = this.db.prepare(sql);
-    const rows = stmt.all(...values) as Array<Omit<FileRecord, 'vectorEmbedding'>>;
-    return rows.map((r) => ({ ...r }));
+    const rows = stmt.all(...values) as RawFileRow[];
+    return rows.map((r) => ({ ...r, hasEmbedding: !!r.hasEmbedding }));
   }
 
   getStats(): DbStats {
