@@ -1,0 +1,63 @@
+import { contextBridge, ipcRenderer } from 'electron';
+
+export interface IndexStats {
+  totalFiles: number;
+  indexedFiles: number;
+  isIndexing: boolean;
+  progress: { current: number; total: number };
+  modelStatus: 'loading' | 'ready' | 'error';
+}
+
+export interface FileRecord {
+  fileId: string;
+  fileName: string;
+  filePath: string;
+  metadataTags: string;
+  vectorEmbedding?: number[];
+  lastModifiedUtc: number;
+}
+
+type ProgressCallback = (data: { current: number; total: number; phase: string }) => void;
+type StatusCallback = (data: IndexStats) => void;
+type AiProgressCallback = (data: { status: string; progress: number }) => void;
+
+const sifeEngine = {
+  search: (query: string): Promise<FileRecord[]> =>
+    ipcRenderer.invoke('sife:search', query),
+
+  getStats: (): Promise<IndexStats> =>
+    ipcRenderer.invoke('sife:getStats'),
+
+  setWatchDir: (dir: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('sife:setWatchDir', dir),
+
+  getWatchDir: (): Promise<string> =>
+    ipcRenderer.invoke('sife:getWatchDir'),
+
+  openFile: (filePath: string): Promise<void> =>
+    ipcRenderer.invoke('sife:openFile', filePath),
+
+  copyPath: (filePath: string): Promise<void> =>
+    ipcRenderer.invoke('sife:copyPath', filePath),
+
+  selectDirectory: (): Promise<string | null> =>
+    ipcRenderer.invoke('sife:selectDirectory'),
+
+  onIndexProgress: (cb: ProgressCallback): void => {
+    ipcRenderer.on('index:progress', (_event, data) => cb(data));
+  },
+
+  onIndexStatus: (cb: StatusCallback): void => {
+    ipcRenderer.on('index:status', (_event, data) => cb(data));
+  },
+
+  onAiProgress: (cb: AiProgressCallback): void => {
+    ipcRenderer.on('ai:progress', (_event, data) => cb(data));
+  },
+
+  removeAllListeners: (channel: string): void => {
+    ipcRenderer.removeAllListeners(channel);
+  },
+};
+
+contextBridge.exposeInMainWorld('sifeEngine', sifeEngine);
