@@ -176,7 +176,8 @@ export class SifeDatabase {
   }
 
   searchByFTS(query: string, limit = 200): FileRecord[] {
-    const sanitized = query.replace(/["'*^()]/g, ' ').trim();
+    // Strip FTS5 special chars AND colons (colon = column filter syntax in FTS5)
+    const sanitized = query.replace(/["'*^():]/g, ' ').trim();
     if (!sanitized) return [];
 
     const stmt = this.db.prepare(`

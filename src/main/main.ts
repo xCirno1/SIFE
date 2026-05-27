@@ -197,7 +197,9 @@ ipcMain.handle('sife:search', async (_event, query: string): Promise<FileRecord[
     }
   }
 
-  const ftsText = semanticQuery.trim() || query.trim();
+  // Only run FTS on the semantic (non-filter) portion — never on the raw query
+  // which may contain "key:value" tokens that FTS5 misinterprets as column filters.
+  const ftsText = semanticQuery.trim();
   if (ftsText) {
     const ftsResults = db.searchByFTS(ftsText, 200);
     for (const r of ftsResults) {
