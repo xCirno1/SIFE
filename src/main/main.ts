@@ -208,7 +208,7 @@ const EMBEDDING_MODEL = 'Xenova/clip-vit-base-patch16';
 
 // Bump this string whenever the embedding strategy changes (e.g. filename→content).
 // A mismatch clears stored embeddings so files are re-indexed with the new strategy.
-const EMBEDDING_STRATEGY = 'content-v1';
+const EMBEDDING_STRATEGY = 'content-snippet-v1';
 
 type EmbedRecord = Pick<FileRecord, 'fileId' | 'filePath'>;
 

@@ -35,9 +35,7 @@ const QUEUE_ITEMS_PREVIEW_LIMIT = 100;
 const QUEUE_UPDATE_THROTTLE_MS = 200;
 
 // Content embedding constants
-const CLIP_DIM = 512;          // CLIP output dimension
 const TEXT_CHUNK_CHARS = 300;  // ~77 tokens; fits CLIP's hard 77-token cap
-const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2 MB cap
 
 const queue: EmbedMessage[] = [];
 let processing = false;
@@ -100,35 +98,6 @@ function isBinaryBuffer(buf: Buffer, len: number): boolean {
   return false;
 }
 
-/** Split `text` into non-overlapping chunks of at most `size` characters. */
-function chunkText(text: string, size: number): string[] {
-  const chunks: string[] = [];
-  for (let i = 0; i < text.length; i += size) {
-    chunks.push(text.slice(i, i + size));
-  }
-  return chunks;
-}
-
-/**
- * Embed an array of text chunks through the CLIP text encoder and return
- * the mean-pooled, L2-normalised embedding.
- */
-async function embedChunks(chunks: string[]): Promise<number[]> {
-  const sum = new Float32Array(CLIP_DIM);
-  let count = 0;
-  for (const chunk of chunks) {
-    if (!chunk.trim()) continue;
-    const inputs = textTokenizer([chunk], { padding: true, truncation: true, max_length: 77 });
-    const { text_embeds } = await textModel(inputs);
-    const data = text_embeds.data as Float32Array;
-    for (let i = 0; i < CLIP_DIM; i++) sum[i] += data[i];
-    count++;
-  }
-  if (count === 0) return new Array<number>(CLIP_DIM).fill(0);
-  for (let i = 0; i < CLIP_DIM; i++) sum[i] /= count;
-  return l2Normalize(sum);
-}
-
 /** L2-normalize a Float32Array into a plain number[]. */
 function l2Normalize(data: Float32Array): number[] {
   let sumSq = 0;
@@ -185,19 +154,7 @@ async function runEmbed(msg: EmbedMessage): Promise<void> {
         post({ type: 'embed:result', payload: { fileId, embedding } });
 
       } else {
-        // ── Text/code path: read content → chunk → mean-pool CLIP text encoder ─
-        const stat = fs.statSync(filePath);
-        if (stat.size > MAX_FILE_BYTES) {
-          // File too large — fall back to filename-only embedding so it still
-          // appears in vector search, just with lower quality signal.
-          const fallback = path.basename(filePath);
-          const inputs = textTokenizer([fallback], { padding: true, truncation: true });
-          const { text_embeds } = await textModel(inputs);
-          const embedding = l2Normalize(text_embeds.data as Float32Array);
-          post({ type: 'embed:result', payload: { fileId, embedding } });
-          return;
-        }
-
+        // ── Text/code path: read first 300 chars → single CLIP text embed ──────
         // Binary detection: check first 512 bytes for null bytes.
         const headerBuf = Buffer.alloc(512);
         const fd = fs.openSync(filePath, 'r');
@@ -208,9 +165,16 @@ async function runEmbed(msg: EmbedMessage): Promise<void> {
           return;
         }
 
-        const content = fs.readFileSync(filePath, 'utf-8');
-        const chunks = chunkText(content, TEXT_CHUNK_CHARS);
-        const embedding = await embedChunks(chunks);
+        // Read only the first TEXT_CHUNK_CHARS characters — fits in CLIP's 77-token window.
+        const buf = Buffer.alloc(TEXT_CHUNK_CHARS);
+        const fd2 = fs.openSync(filePath, 'r');
+        const read = fs.readSync(fd2, buf, 0, TEXT_CHUNK_CHARS, 0);
+        fs.closeSync(fd2);
+        const snippet = buf.slice(0, read).toString('utf-8');
+
+        const inputs = textTokenizer([snippet], { padding: true, truncation: true, max_length: 77 });
+        const { text_embeds } = await textModel(inputs);
+        const embedding = l2Normalize(text_embeds.data as Float32Array);
         post({ type: 'embed:result', payload: { fileId, embedding } });
       }
 
