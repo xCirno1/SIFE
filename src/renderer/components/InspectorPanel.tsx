@@ -86,7 +86,7 @@ export default function InspectorPanel({ file, onClose }: InspectorPanelProps) {
   const color = getExtColor(type);
   const hasEmbedding = file.hasEmbedding === true;
   const similarityPercent = typeof file.semanticScore === 'number'
-    ? Math.max(0, Math.min(100, Math.round(file.semanticScore * 100)))
+    ? Math.max(0, Math.min(100, Math.round(((file.semanticScore - 0.80) / (1 - 0.80)) * 100)))
     : null;
 
   return (

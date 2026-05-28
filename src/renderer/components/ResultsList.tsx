@@ -38,8 +38,11 @@ function formatDate(ts: number): string {
   });
 }
 
+// CLIP cosine similarity clusters in roughly 0.80–1.00 for same-domain content.
+// Rescale that band to 0–100% so scores actually differentiate results.
+const CLIP_FLOOR = 0.80;
 function formatSimilarity(score: number): string {
-  const pct = Math.max(0, Math.min(100, Math.round(score * 100)));
+  const pct = Math.max(0, Math.min(100, Math.round(((score - CLIP_FLOOR) / (1 - CLIP_FLOOR)) * 100)));
   return `${pct}%`;
 }
 
