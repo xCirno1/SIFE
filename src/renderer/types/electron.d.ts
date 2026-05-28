@@ -30,6 +30,7 @@ declare global {
     metadataTags: string;
     vectorEmbedding?: number[];
     hasEmbedding?: boolean;
+    semanticScore?: number;
     lastModifiedUtc: number;
   }
 

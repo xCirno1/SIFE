@@ -15,6 +15,7 @@ export interface FileRecord {
   metadataTags: string;
   vectorEmbedding?: number[];
   hasEmbedding?: boolean;
+  semanticScore?: number;
   lastModifiedUtc: number;
 }
 

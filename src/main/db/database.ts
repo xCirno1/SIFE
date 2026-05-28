@@ -8,6 +8,7 @@ export interface FileRecord {
   metadataTags: string;
   vectorEmbedding?: number[];
   hasEmbedding?: boolean;
+  semanticScore?: number;
   lastModifiedUtc: number;
 }
 
@@ -220,7 +221,7 @@ export class SifeDatabase {
     return rows.map((row) => ({ ...row, hasEmbedding: !!row.hasEmbedding }));
   }
 
-  searchBySimilarity(queryEmbedding: number[], topK = 20): FileRecord[] {
+  searchBySimilarity(queryEmbedding: number[], topK = 20, minScore = 0.2): FileRecord[] {
     const candidates = this.getAllFilesWithEmbeddings();
     if (candidates.length === 0) return [];
 
@@ -231,7 +232,11 @@ export class SifeDatabase {
     }));
 
     scored.sort((a, b) => b.score - a.score);
-    const topIds = scored.slice(0, topK).map((s) => s.fileId);
+    const topScored = scored
+      .filter((s) => s.score >= minScore)
+      .slice(0, topK);
+    const topIds = topScored.map((s) => s.fileId);
+    const scoreMap = new Map(topScored.map((s) => [s.fileId, s.score]));
 
     if (topIds.length === 0) return [];
 
@@ -249,7 +254,7 @@ export class SifeDatabase {
     return topIds
       .map((id) => rowMap.get(id))
       .filter((r): r is RawFileRow => r !== undefined)
-      .map((r) => ({ ...r, hasEmbedding: !!r.hasEmbedding }));
+      .map((r) => ({ ...r, hasEmbedding: !!r.hasEmbedding, semanticScore: scoreMap.get(r.fileId) }));
   }
 
   applyFilters(filters: SqlFilter[], limit = 200): FileRecord[] {
