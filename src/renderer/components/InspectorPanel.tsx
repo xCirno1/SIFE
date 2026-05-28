@@ -85,6 +85,9 @@ export default function InspectorPanel({ file, onClose }: InspectorPanelProps) {
   const ext = (tagMap['Ext'] ?? '').toUpperCase();
   const color = getExtColor(type);
   const hasEmbedding = file.hasEmbedding === true;
+  const similarityPercent = typeof file.semanticScore === 'number'
+    ? Math.max(0, Math.min(100, Math.round(file.semanticScore * 100)))
+    : null;
 
   return (
     <div
@@ -184,21 +187,11 @@ export default function InspectorPanel({ file, onClose }: InspectorPanelProps) {
                 <span className="text-xs" style={{ color: '#a855f7' }}>✓</span>
                 <span className="text-xs font-medium" style={{ color: '#c084fc' }}>Embedding ready</span>
               </div>
-              <p className="text-[11px] leading-relaxed" style={{ color: '#71717a' }}>
-                Analyzed from file name and metadata:
-              </p>
-              <p
-                className="text-[11px] break-words leading-relaxed font-mono"
-                style={{ color: '#a1a1aa' }}
-              >
-                {file.fileName}
-                {tagMap['Type'] ? ` · ${tagMap['Type']}` : ''}
-                {ext ? ` · ${ext}` : ''}
-                {tagMap['SizeKB'] ? ` · ${tagMap['SizeKB']} KB` : ''}
-              </p>
-              <p className="text-[10px] mt-1" style={{ color: '#52525b' }}>
-                This file will appear in semantic search results for related descriptions.
-              </p>
+              {similarityPercent !== null && (
+                <p className="text-[10px] mt-1" style={{ color: '#71717a' }}>
+                  Similarity to current query: {similarityPercent}%
+                </p>
+              )}
             </div>
           ) : (
             <p className="text-xs" style={{ color: '#52525b' }}>

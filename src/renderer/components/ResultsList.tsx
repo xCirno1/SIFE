@@ -38,6 +38,19 @@ function formatDate(ts: number): string {
   });
 }
 
+function formatSimilarity(score: number): string {
+  const pct = Math.max(0, Math.min(100, Math.round(score * 100)));
+  return `${pct}%`;
+}
+
+function computeScoreSpread(results: FileRecord[]): number {
+  const scores = results
+    .map((r) => r.semanticScore)
+    .filter((s): s is number => typeof s === 'number');
+  if (scores.length < 2) return 0;
+  return Math.max(...scores) - Math.min(...scores);
+}
+
 const EXT_COLORS: Record<string, { bg: string; text: string }> = {
   image:    { bg: 'rgba(59,130,246,0.2)',  text: '#60a5fa' },
   video:    { bg: 'rgba(239,68,68,0.2)',   text: '#f87171' },
@@ -58,6 +71,7 @@ interface RowData {
   results: FileRecord[];
   selectedId: string | null;
   onSelect: (file: FileRecord) => void;
+  showScores: boolean;
 }
 
 const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
@@ -71,6 +85,10 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
   const sizeKB = tags['SizeKB'] ?? '';
   const color = getExtColor(type);
   const isSelected = file.fileId === selectedId;
+  const simLabel =
+    data.showScores && typeof file.semanticScore === 'number'
+      ? formatSimilarity(file.semanticScore)
+      : '';
 
   const rowStyle: CSSProperties = {
     ...style,
@@ -119,6 +137,15 @@ const Row = memo(({ index, style, data }: ListChildComponentProps<RowData>) => {
         className="flex-shrink-0 text-right text-xs"
         style={{ color: '#a1a1aa' }}
       >
+        {simLabel && (
+          <div
+            className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold mb-0.5"
+            style={{ backgroundColor: 'rgba(168,85,247,0.16)', color: '#d8b4fe' }}
+            title="Semantic similarity to current query"
+          >
+            {simLabel}
+          </div>
+        )}
         {sizeKB && <div>{formatBytes(sizeKB)}</div>}
         <div className="mt-0.5">{formatDate(file.lastModifiedUtc)}</div>
       </div>
@@ -158,6 +185,8 @@ export default function ResultsList({ results, selectedId, onSelect }: ResultsLi
     );
   }
 
+  const showScores = computeScoreSpread(results) >= 0.05;
+
   return (
     <div ref={ref} className="flex-1 overflow-hidden">
       {width > 0 && height > 0 && (
@@ -166,7 +195,7 @@ export default function ResultsList({ results, selectedId, onSelect }: ResultsLi
           width={width}
           itemCount={results.length}
           itemSize={64}
-          itemData={{ results, selectedId, onSelect }}
+          itemData={{ results, selectedId, onSelect, showScores }}
           overscanCount={8}
         >
           {Row}

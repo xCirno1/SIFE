@@ -7,6 +7,7 @@ import { parseQuery } from './query/parser';
 import { initLogger, log, getLogBuffer, getLogFilePath } from './logger';
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+const shouldOpenDevTools = process.env.SIFE_OPEN_DEVTOOLS === '1';
 
 let mainWindow: BrowserWindow | null = null;
 let db: SifeDatabase | null = null;
@@ -50,7 +51,9 @@ function createWindow(): void {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    if (shouldOpenDevTools) {
+      mainWindow.webContents.openDevTools();
+    }
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
@@ -106,13 +109,7 @@ function flushUpsertBatch(): void {
 
   // Always dispatch to the AI worker — the worker queues internally and waits for model ready.
   if (aiWorker) {
-    for (const record of toFlush) {
-      if (isImageFile(record.filePath)) {
-        aiWorker.postMessage({ type: 'embed:image', payload: { fileId: record.fileId, filePath: record.filePath } });
-      } else {
-        aiWorker.postMessage({ type: 'embed:text', payload: { fileId: record.fileId, text: `${record.fileName} ${record.metadataTags}` } });
-      }
-    }
+    postEmbedsBatched(toFlush, 200);
   }
 }
 
@@ -217,6 +214,38 @@ function isImageFile(filePath: string): boolean {
   return IMAGE_EMBED_EXTS.has(ext);
 }
 
+type EmbedRecord = Pick<FileRecord, 'fileId' | 'fileName' | 'filePath' | 'metadataTags'>;
+
+function postEmbedForRecord(record: EmbedRecord): void {
+  if (!aiWorker) return;
+  if (isImageFile(record.filePath)) {
+    aiWorker.postMessage({ type: 'embed:image', payload: { fileId: record.fileId, filePath: record.filePath } });
+  } else {
+    aiWorker.postMessage({
+      type: 'embed:text',
+      payload: { fileId: record.fileId, text: `${record.fileName} ${record.metadataTags}` },
+    });
+  }
+}
+
+function postEmbedsBatched(records: EmbedRecord[], chunkSize = 250): void {
+  if (!aiWorker || records.length === 0) return;
+
+  let index = 0;
+  const sendChunk = (): void => {
+    if (!aiWorker) return;
+    const end = Math.min(index + chunkSize, records.length);
+    for (; index < end; index++) {
+      postEmbedForRecord(records[index]);
+    }
+    if (index < records.length) {
+      setTimeout(sendChunk, 0);
+    }
+  };
+
+  sendChunk();
+}
+
 // ---------------------------------------------------------------------------
 // Pending query-embed map — lets sife:search await an embedding from the worker
 // ---------------------------------------------------------------------------
@@ -232,7 +261,7 @@ function embedQueryText(text: string): Promise<number[]> {
     const timer = setTimeout(() => {
       pendingQueryEmbeds.delete(requestId);
       reject(new Error('Embedding timed out'));
-    }, 10_000);
+    }, 30_000);
     pendingQueryEmbeds.set(requestId, {
       resolve: (v) => { clearTimeout(timer); resolve(v); },
       reject: (e) => { clearTimeout(timer); reject(e); },
@@ -266,13 +295,7 @@ function startAiWorker(): void {
       if (db && aiWorker) {
         const pending = db.getFilesWithoutEmbeddings();
         log('INFO', 'AiWorker', `Backfilling ${pending.length} unembedded files`);
-        for (const record of pending) {
-          if (isImageFile(record.filePath)) {
-            aiWorker.postMessage({ type: 'embed:image', payload: { fileId: record.fileId, filePath: record.filePath } });
-          } else {
-            aiWorker.postMessage({ type: 'embed:text', payload: { fileId: record.fileId, text: `${record.fileName} ${record.metadataTags}` } });
-          }
-        }
+        postEmbedsBatched(pending, 200);
       }
     } else if (type === 'embed:result') {
       const { fileId, embedding } = payload as { fileId: string; embedding: number[] };
@@ -314,6 +337,26 @@ function startAiWorker(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Search helpers
+// ---------------------------------------------------------------------------
+
+const PHOTO_INTENT_WORDS = [
+  'photo', 'photos', 'picture', 'pictures', 'image', 'images',
+  'img', 'pic', 'pics', 'shot', 'shots', 'selfie', 'selfies',
+  'wallpaper', 'screenshot', 'screenshots', 'snapshot', 'snapshots', 'photograph', 'photographs',
+];
+
+function hasPhotoIntent(query: string): boolean {
+  const lower = query.toLowerCase();
+  return PHOTO_INTENT_WORDS.some((w) => lower.includes(w));
+}
+
+function getRecordType(metadataTags: string): string {
+  const match = /Type:([^;]+)/.exec(metadataTags);
+  return match ? match[1].toLowerCase() : '';
+}
+
+// ---------------------------------------------------------------------------
 // IPC Handlers
 // ---------------------------------------------------------------------------
 
@@ -325,12 +368,14 @@ ipcMain.handle('sife:search', async (_event, query: string): Promise<FileRecord[
   }
 
   const { sqlFilters, semanticQuery } = parseQuery(query);
-  const resultMap = new Map<string, FileRecord>();
+  const filterMap = new Map<string, FileRecord>();
+  const ftsMap = new Map<string, FileRecord>();
+  const vectorMap = new Map<string, FileRecord>();
 
   if (sqlFilters.length > 0) {
     const filterResults = db.applyFilters(sqlFilters as SqlFilter[], 200);
     for (const r of filterResults) {
-      resultMap.set(r.fileId, r);
+      filterMap.set(r.fileId, r);
     }
   }
 
@@ -339,7 +384,7 @@ ipcMain.handle('sife:search', async (_event, query: string): Promise<FileRecord[
   if (ftsText) {
     const ftsResults = db.searchByFTS(ftsText, 200);
     for (const r of ftsResults) {
-      if (!resultMap.has(r.fileId)) resultMap.set(r.fileId, r);
+      ftsMap.set(r.fileId, r);
     }
   }
 
@@ -347,9 +392,9 @@ ipcMain.handle('sife:search', async (_event, query: string): Promise<FileRecord[
   if (ftsText && indexStats.modelStatus === 'ready') {
     try {
       const queryEmbedding = await embedQueryText(ftsText);
-      const vectorResults = db.searchBySimilarity(queryEmbedding, 50);
+      const vectorResults = db.searchBySimilarity(queryEmbedding, 50, 0.22);
       for (const r of vectorResults) {
-        if (!resultMap.has(r.fileId)) resultMap.set(r.fileId, r);
+        vectorMap.set(r.fileId, r);
       }
     } catch (err) {
       // Model not ready or timed out — FTS results are still returned
@@ -357,7 +402,32 @@ ipcMain.handle('sife:search', async (_event, query: string): Promise<FileRecord[
     }
   }
 
-  const combined = Array.from(resultMap.values()).slice(0, 500);
+  // Ranking strategy:
+  // 1) SQL filter matches first (explicit user constraints)
+  // 2) Vector matches next (semantic relevance)
+  // 3) FTS matches last (lexical fallback)
+  const combinedMap = new Map<string, FileRecord>();
+  for (const r of filterMap.values()) combinedMap.set(r.fileId, r);
+  for (const r of vectorMap.values()) {
+    if (!combinedMap.has(r.fileId)) combinedMap.set(r.fileId, r);
+  }
+  for (const r of ftsMap.values()) {
+    if (!combinedMap.has(r.fileId)) combinedMap.set(r.fileId, r);
+  }
+
+  const combined = Array.from(combinedMap.values()).slice(0, 500);
+
+  // Photo-intent boost: when query implies image content, sort image-type
+  // files to the top while preserving relative order within each group.
+  if (ftsText && hasPhotoIntent(ftsText)) {
+    combined.sort((a, b) => {
+      const aIsImage = getRecordType(a.metadataTags) === 'image';
+      const bIsImage = getRecordType(b.metadataTags) === 'image';
+      if (aIsImage === bIsImage) return 0;
+      return aIsImage ? -1 : 1;
+    });
+  }
+
   return combined;
 });
 
